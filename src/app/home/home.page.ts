@@ -16,6 +16,7 @@ export class HomePage {
   // ############################### REGION DATOS ###############################
 
   // TODO - Inyectamos el controlador de toasts para mostrar mensajes al usuario
+  private toastController = inject(ToastController);
 
   // Lista completa de restaurantes leída del JSON en tiempo de compilación
   restaurantes: Restaurante[] = restaurantesJSON as Restaurante[];
@@ -25,25 +26,40 @@ export class HomePage {
 
   // TODO - true cuando hay al menos un restaurante cargado.
   // Habrá que usar un computed para controlar si restaurantesCargados tiene elementos o no.
-  hayDatos = false;
+  hayDatos = computed(() => this.restaurantesCargados().length > 0);
 
   // TODO - Carga la lista completa en el signal y muestra un toast de confirmación
   cargarDatos() {
     // Cargamos los datos en el signal mediante set()
-    
+    this.restaurantesCargados.set(this.restaurantes);
+
     // Mostramos un toast de confirmación con el número de restaurantes cargados
-    
+    this.mostrarToast(
+      `${this.restaurantesCargados().length} restaurantes cargados`,
+      'success'
+    );
   }
 
   // TODO -Muestra un toast con el mensaje y color indicados
-  private async mostrarToast(mensaje: string, color: 'success' | 'danger' | 'warning') {
-    
+  private async mostrarToast(
+    mensaje: string,
+    color: 'success' | 'danger' | 'warning'
+  ) {
+    const toast = await this.toastController.create({
+      message: mensaje,
+      duration: 2000,
+      color: color,
+      position: 'bottom'
+    });
+
+    await toast.present();
   }
 
 
   // ############################### REGION FILTROS (estado general) ###############################
 
   textoBusqueda = signal('');
+
 
   // ############################### REGION TERRITORIOS ###############################
 
@@ -54,20 +70,30 @@ export class HomePage {
   // PISTA: Mediante map() podemos crear un array de string[] con cada territorio de cada restaurante. Ejemplo: ["Bizkaia", "Gipuzkoa", "Bizkaia", "Araba", "Gipuzkoa"]
   //        Luego mediante Set() podemos eliminar duplicados y finalmente mediante Array.from() podemos volver a convertirlo en un array para devolverlo ordenado alfabéticamente mediante sort().
   territoriosFiltrados = computed(() => {
+    const territorios = this.restaurantesCargados()
+      .filter(r => !!r.territory?.trim())
+      .map(r => r.territory!.trim());
 
+    return Array.from(new Set(territorios)).sort();
   });
 
   // TODO - Actualiza el territorio seleccionado y elimina las localidades que ya no pertenecen a él
   onTerritorioChange(value: string) {
     // Actualizamos el territorio seleccionado
+    this.territorioSeleccionado.set(value);
 
     // Filtra las localidades ya seleccionadas, quedándose solo con las que siguen siendo válidas para el nuevo territorio.
     // PISTA: Podemos usar filter() para quedarnos solo con las localidades que están en la lista de localidades filtradas por territorio y includes() para comprobar si una localidad está en esa lista.
     // Por ejemplo, si el usuario tenía seleccionadas las localidades ["Bilbao", "Donostia"] y cambia el territorio a "Araba", la localidad "Bilbao" ya no es válida y debe eliminarse de la lista de localidades seleccionadas.
+    const localidadesValidas = this.localidadesSeleccionadas().filter(
+      localidad =>
+        this.localidadesFiltradasPorTerritorio().includes(localidad)
+    );
 
     // Actualizamos las localidades seleccionadas con las nuevas localidades válidas
-
+    this.localidadesSeleccionadas.set(localidadesValidas);
   }
+
 
   // ############################### REGION LOCALIDADES ###############################
 
@@ -78,13 +104,19 @@ export class HomePage {
   // PISTA: Haremos uso de la lista de restaurantes, si hay un territorio seleccionado filtraremos por él y luego obtendremos las localidades únicas de los restaurantes restantes, eliminando duplicados y ordenando alfabéticamente.
   localidadesFiltradasPorTerritorio = computed(() => {
     // Obtenemos la lista de restaurantes cargados, siendo lista un array de objetos Restaurante.
-    let lista: Restaurante[] = [];
+    let lista: Restaurante[] = this.restaurantesCargados();
+
     // Para el territorio la pasaremos a minúsculas y eliminaremos espacios al principio y al final para evitar problemas de coincidencia, mediante toLowerCase() y trim().
-    const territorio = "";
+    const territorio = this.territorioSeleccionado()
+      .toLowerCase()
+      .trim();
+
     // Si hay un territorio seleccionado, filtramos la lista de restaurantes por él
     if (territorio) {
       // Filtramos la lista de restaurantes para quedarnos solo con los que tienen el territorio seleccionado, usando filter() y comparando el territorio del restaurante con el territorio seleccionado.
-
+      lista = lista.filter(
+        r => r.territory?.toLowerCase().trim() === territorio
+      );
     }
 
     // RESUELTO: Obtenemos la lista de localidades únicas de los restaurantes restantes, eliminando duplicados y ordenando alfabéticamente.
@@ -97,17 +129,20 @@ export class HomePage {
      * 
      *              Luego mediante map() obtenemos un array de string[] con las localidades, usando r.locality!.trim() para obtener el valor de locality (el ! le dice a TypeScript que estamos seguros de que no es undefined) 
      *              y aplicando trim() para eliminar espacios al principio y al final.  
-     */                  
-    const localities = lista.filter(r => !!r.locality?.trim()).map(r => r.locality!.trim());
+     */
+    const localities = lista
+      .filter(r => !!r.locality?.trim())
+      .map(r => r.locality!.trim());
 
-    //Finalmente mediante Set() eliminamos duplicados y Array.from() lo convertimos de nuevo en un array, que ordenamos alfabéticamente mediante sort(). 
-    
+    //Finalmente mediante Set() eliminamos duplicados y Array.from() lo convertimos de nuevo en un array, que ordenamos alfabéticamente mediante sort().
+    return Array.from(new Set(localities)).sort();
   });
 
   // TODO - Actualiza las localidades seleccionadas con los valores del evento
   onLocalidadesChange(value: string[]) {
-    
+    this.localidadesSeleccionadas.set(value);
   }
+
 
   // ############################### REGION RESULTADOS ###############################
 
@@ -115,6 +150,7 @@ export class HomePage {
   restaurantesFiltrados = computed(() => {
 
     // Obtenemos la lista de restaurantes cargados, siendo lista un array de objetos Restaurante.
+    let lista: Restaurante[] = this.restaurantesCargados();
 
     // Filtramos la lista de restaurantes según el texto de búsqueda, el territorio seleccionado y las localidades seleccionadas.
     // PISTA: Habrá que hacer uso de icludes() para comprobar si el texto de búsqueda está en el nombre del restaurante, si el territorio del restaurante coincide con el territorio seleccionado 
@@ -122,24 +158,68 @@ export class HomePage {
     //        Habrá que hacer uso de filter() para filtrar la lista de restaurantes según cada uno de los filtros activos.
 
     //textoBusqueda
-    
+    const texto = this.textoBusqueda()
+      .toLowerCase()
+      .trim();
+
+    if (texto) {
+      lista = lista.filter(
+        r => r.documentName?.toLowerCase().includes(texto)
+      );
+    }
+
     //territorioSeleccionado
-    
+    const territorio = this.territorioSeleccionado()
+      .toLowerCase()
+      .trim();
+
+    if (territorio) {
+      lista = lista.filter(
+        r => r.territory?.toLowerCase().trim() === territorio
+      );
+    }
+
     //localidadesSeleccionadas
-    
+    const localidades = this.localidadesSeleccionadas();
+
+    if (localidades.length > 0) {
+      lista = lista.filter(
+        r =>
+          !!r.locality &&
+          localidades.includes(r.locality.trim())
+      );
+    }
+
     //Devuelve la lista filtrada de restaurantes
- 
+    return lista;
   });
+
 
   // ############################### REGION AUXILIARES ###############################
 
+  hayFiltrosActivos(): boolean {
+    return (
+      this.textoBusqueda().trim() !== '' ||
+      this.territorioSeleccionado().trim() !== '' ||
+      this.localidadesSeleccionadas().length > 0
+    );
+  }
+
+  limpiarTodosFiltros() {
+    this.textoBusqueda.set('');
+    this.territorioSeleccionado.set('');
+    this.localidadesSeleccionadas.set([]);
+  }
+
   // Devuelve el número de estrellas Michelin (0 si no tiene o el valor no es numérico)
-  estrellasMichelin() {
-    
+  estrellasMichelin(r: Restaurante): number {
+    const numero = Number(r.michelinStar);
+    return Number.isNaN(numero) ? 0 : numero;
   }
 
   // Devuelve el número de soles Repsol (0 si no tiene o el valor no es numérico)
-  repsolSoles() {
-    
+  repsolSoles(r: Restaurante): number {
+    const numero = Number(r.repsolSun);
+    return Number.isNaN(numero) ? 0 : numero;
   }
 }
